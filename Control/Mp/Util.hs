@@ -1,6 +1,11 @@
 {-|
+Description : Definitions for some common effects.
+Copyright   : (c) 2021, Microsoft Research; Daan Leijen; Ningning Xie
+License     : MIT
+Maintainer  : xnning@hku.hk; daan@microsoft.com
+Stability   : Experimental
+
 Some definitions for common effects.
-Closely based on the Ev.Eff library.
 -}
 {-# LANGUAGE TypeOperators, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses, UndecidableInstances, Rank2Types #-}
 module Control.Mp.Util
