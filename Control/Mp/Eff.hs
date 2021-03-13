@@ -95,7 +95,6 @@ import Prelude hiding (read,flip)
 import Control.Monad( ap, liftM )
 import Data.Type.Equality( (:~:)( Refl ) )
 import Control.Monad.Primitive
--- import Debug.Trace( trace )
 
 -------------------------------------------------------
 -- Assume some way to generate a fresh prompt marker
@@ -128,15 +127,6 @@ freshMarker f
                return i
     in seq m (f (Marker m))
 
--- evaluate a action with a fresh marker
-freshMarkerCtl :: (Marker h e a -> Ctl e a) -> Ctl e a
-freshMarkerCtl f
-  = let m = unsafePerformIO $
-            do i <- readIORef unique;
-               writeIORef unique (i+1);
-               return i
-    in seq m (f (Marker m))
-
 -------------------------------------------------------
 -- The handler context
 -------------------------------------------------------
@@ -151,12 +141,14 @@ data Context e where
 data ContextT e e' where
   CTCons :: !(Marker h e' ans) -> !(h e' ans) -> !(ContextT e e') -> ContextT e (h :* e)
   CTId   :: ContextT e e
+  -- CTComp :: ContextT e'' e' -> ContextT e e'' -> ContextT e e'
   -- CTFun :: !(Context e -> Context e') -> ContextT e e'
 
 -- apply a context transformer
 applyT :: ContextT e e' -> Context e -> Context e'
 applyT (CTCons m h g) ctx = CCons m h g ctx
 applyT (CTId) ctx         = ctx
+--applyT (CTComp c1 c2) ctx = applyT c1 (applyT c2 ctx)
 --applyT (CTFun f) ctx = f ctx
 
 -- the tail of a context
@@ -178,8 +170,23 @@ data Ctl e a = Pure { result :: !a }
 
 newtype Eff e a = Eff { unEff :: Context e -> Ctl e a }
 
+{-# INLINE lift #-}
 lift :: Ctl e a -> Eff e a
 lift ctl = Eff (\ctx -> ctl)
+
+{-# INLINE ctxMap #-}
+ctxMap :: (Context e' -> Context e) -> Eff e a -> Eff e' a
+ctxMap f eff = Eff (\ctx -> ctxMapCtl f $ unEff eff (f ctx))
+
+{-# INLINE ctxMapCtl #-}
+ctxMapCtl :: (Context e' -> Context e) -> Ctl e a -> Ctl e' a
+ctxMapCtl f (Pure x) = Pure x
+ctxMapCtl f (Control m op cont) = Control m op (\b -> ctxMap f (cont b))
+
+{-# INLINE hideSecond #-}
+hideSecond :: Eff (h :* e) a -> Eff (h :* h' :* e) a
+hideSecond eff = ctxMap (\(CCons m h CTId (CCons m' h' g' ctx)) ->
+                             CCons m h (CTCons m' h' g') ctx) eff
 
 under :: In h e => Marker h e' ans -> Context e' -> Eff e' b -> Eff e b
 under m ctx (Eff eff) = Eff (\_ -> case eff ctx of
@@ -247,7 +254,7 @@ kcompose2 g f x
 {-# INLINE prompt #-}
 prompt :: Marker h e ans -> h e ans -> Eff (h :* e) ans -> Eff e ans
 prompt m h (Eff eff) = Eff $ \ctx ->
-  case (eff (CCons m h CTId ctx)) of                    -- add handler o the context
+  case (eff (CCons m h CTId ctx)) of                    -- add handler to the context
     Pure x -> Pure x
     Control n op cont ->
         let cont' x = prompt m h (cont x) in      -- extend the continuation with our own prompt
@@ -275,37 +282,18 @@ handlerRet ret h action
 {-# INLINE handlerHide #-}
 handlerHide :: h (h' :* e) ans -> Eff (h :* e) ans -> Eff (h' :* e) ans
 handlerHide h action
-  = freshMarker (\m ->
-      Eff (\(CCons m' h' g' ctx') ->
-              ctlHide h (unEff action (CCons m h (CTCons m' h' g') ctx'))))
-
-{-# INLINE ctlHide #-}
-ctlHide :: h (h' :* e) ans -> Ctl (h :* e) ans -> Ctl (h' :* e) ans
-ctlHide h (Pure x) = Pure x
-ctlHide h (Control m op cont) = Control m op (\b -> handlerHide h (cont b))
-
-reflect :: Eff e a -> Eff e (Ctl e a)
-reflect (Eff eff) = Eff (\ctx -> let ctl = eff ctx in seq ctl (Pure ctl))
+  = handler h (hideSecond action)
 
 {-# INLINE handlerHideRetEff #-}
 handlerHideRetEff :: (ans -> Eff (h' :* e) b) -> h (h' :* e) b -> Eff (h :* e) ans -> Eff (h' :* e) b
 handlerHideRetEff ret h action
-  = freshMarker (\m -> Eff (\ctx@(CCons m' h' g' ctx') ->
-                              ctlHideRet ret h ctx $ unEff action (CCons m h (CTCons m' h' g') ctx')))
-
-{-# INLINE ctlHideRet #-}
-ctlHideRet :: (ans -> Eff (h' :* e) b) -> h (h' :* e) b -> Context (h' :* e) -> Ctl (h :* e) ans ->  Ctl (h' :* e) b
-ctlHideRet ret h ctx (Pure x) = unEff (ret x) ctx
-ctlHideRet ret h ctx (Control m op cont) = Control m op (\b -> handlerHideRetEff ret h (cont b))
+  = handler h (do x <- hideSecond action; mask (ret x))
 
 -- | Mask the top effect handler in the give action (i.e. if a operation is performed
 -- on an @h@ effect inside @e@ the top handler is ignored).
 mask :: Eff e ans -> Eff (h :* e) ans
-mask (Eff f) = Eff (\ctx -> maskCtl (f (ctail ctx)))
+mask eff = ctxMap ctail eff
 
-maskCtl :: Ctl e ans -> Ctl (h :* e) ans
-maskCtl (Pure x) = Pure x
-maskCtl (Control m op cont) = Control m op (\b -> mask (cont b))
 
 ---------------------------------------------------------
 --
@@ -408,10 +396,6 @@ newtype Local a e ans = Local (IORef a)
 unsafeIO :: IO a -> Eff e a
 unsafeIO io = let x = unsafeInlinePrim io in seq x (Eff $ \_ -> Pure x)
 
-{-# INLINE unsafeIOCtl #-}
-unsafeIOCtl :: IO a -> Ctl e a
-unsafeIOCtl io = let x = unsafeInlinePrim io in seq x (Pure x)
-
 -- | Get the value of the local state.
 {-# INLINE lget #-}
 lget :: Local a e ans -> Op () a e ans
@@ -445,47 +429,34 @@ mpromptIORef r action
   = Eff $ \ctx -> case (unEff action ctx) of
       p@(Pure _) -> p
       Control m op cont
-        -> do val <- unsafeIOCtl (readIORef r)                 -- save current value on yielding
-              let cont' x = do unsafeIO (writeIORef r val)  -- restore saved value on resume
-                               mpromptIORef r (cont x)
-              Control m op cont'
-
-mpromptIORefCtl :: IORef a -> Ctl e b -> Ctl e b
-mpromptIORefCtl r action
-  = case action of
-      p@(Pure _) -> p
-      Control m op cont
-        -> do val <- unsafeIOCtl (readIORef r)                 -- save current value on yielding
+        -> do val <- unEff (unsafeIO (readIORef r)) ctx                     -- save current value on yielding
               let cont' x = do unsafeIO (writeIORef r val)  -- restore saved value on resume
                                mpromptIORef r (cont x)
               Control m op cont'
 
 -- | Create an `IORef` connected to a prompt. The value of
 -- the `IORef` is saved and restored through resumptions.
-unsafePromptIORef :: a -> (Marker h e b -> IORef a -> Ctl e b) -> Ctl e b
+unsafePromptIORef :: a -> (Marker h e b -> IORef a -> Eff e b) -> Eff e b
 unsafePromptIORef init action
-  = freshMarkerCtl $ \m ->
-    do r <- unsafeIOCtl (newIORef init)
-       mpromptIORefCtl r (action m r)
+  = freshMarker $ \m ->
+    do r <- unsafeIO (newIORef init)
+       mpromptIORef r (action m r)
 
 -- | Create a local state handler with an initial state of type @a@,
 -- with a return function to combine the final result with the final state to a value of type @b@.
 {-# INLINE localRet #-}
 localRet :: a -> (ans -> a -> b) -> Eff (Local a :* e) ans -> Eff e b
 localRet init ret action
-  = Eff (\ctx -> unsafePromptIORef init $ \m r ->  -- set a fresh prompt with marker `m`
-                 case unEff action (CCons m (Local r) CTId ctx) of-- and call action with the extra evidence
-                    Pure x -> do y <- unsafeIOCtl (readIORef r)
-                                 return (ret x y)
-                    Control m op cont -> Control m op (\b -> localRet init ret (cont b))
-        )
-
+  = unsafePromptIORef init $ \m r ->  -- set a fresh prompt with marker `m`
+        do x <- ctxMap (\ctx -> CCons m (Local r) CTId ctx) action -- and call action with the extra evidence
+           y <- unsafeIO (readIORef r)
+           return (ret x y)
 
 -- | Create a local state handler with an initial state of type @a@.
 {-# INLINE local #-}
 local :: a -> Eff (Local a :* e) ans -> Eff e ans
 local init action
- = localRet init const action
+  = localRet init const action
 
 -- | Create a new handler for @h@ which can access the /locally isolated state/ @`Local` a@.
 -- This is fully local to the handler @h@ only and not visible in the @action@ as
