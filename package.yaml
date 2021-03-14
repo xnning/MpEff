@@ -1,0 +1,32 @@
+name:                mpeff
+version:             0.1.0.0
+github:              "xnning/mpeff"
+license:             MIT
+author:              "Ningning Xie, Daan Leijen"
+maintainer:          "xnning@hku.hk;daan@microsoft.com"
+copyright:           "(c) 2020, Microsoft Research, Ningning Xie, Daan Leijen"
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+
+# Metadata used when publishing your package
+synopsis:            Efficient effect handlers based on evidence-passing semantics
+category:            Control, Effect
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:
+  See the "Control.Mp.Eff" module or README.md for further information
+
+
+dependencies:
+- base >= 4.7 && < 5
+- primitive
+- ghc-prim
+
+library:
+  source-dirs: src
+  ghc-options:
+    - -O2 -fspec-constr-keen

@@ -1,0 +1,43 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.33.0.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: b8ecf1544cc419d434acb5067f25bfdb4ba919f6db167c0d989bd35945ae61ee
+
+name:           mpeff
+version:        0.1.0.0
+synopsis:       Efficient effect handlers based on evidence-passing semantics
+description:    See the "Control.Mp.Eff" module or README.md for further information
+category:       Control, Effect
+homepage:       https://github.com/xnning/mpeff#readme
+bug-reports:    https://github.com/xnning/mpeff/issues
+author:         Ningning Xie, Daan Leijen
+maintainer:     xnning@hku.hk;daan@microsoft.com
+copyright:      (c) 2020, Microsoft Research, Ningning Xie, Daan Leijen
+license:        MIT
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    ChangeLog.md
+
+source-repository head
+  type: git
+  location: https://github.com/xnning/mpeff
+
+library
+  exposed-modules:
+      Control.Mp.Eff
+      Control.Mp.Util
+  other-modules:
+      Paths_mpeff
+  hs-source-dirs:
+      src
+  ghc-options: -O2 -fspec-constr-keen
+  build-depends:
+      base >=4.7 && <5
+    , ghc-prim
+    , primitive
+  default-language: Haskell2010

@@ -21,14 +21,14 @@ is based on /"Generalized Evidence Passing for Effect Handlers"/, Ningning Xie a
 The implementation is closely based on the [Ev.Eff](https://hackage.haskell.org/package/eveff) 
 library described in detail in /"Effect Handlers in Haskell, Evidently"/, Ningning Xie and Daan Leijen, Haskell 2020 [(pdf)](https://www.microsoft.com/en-us/research/publication/effect-handlers-in-haskell-evidently).
 The _Mp.Eff_ and _Ev.Eff_ libraries expose the exact same interface, but
-the _Mp.Eff_ library can express full effect handler semantics, including non-scoped resumptions -- 
+the _Mp.Eff_ library can express full effect handler semantics, including non-scoped resumptions --
 it is slightly slower though (see the 2021 paper for benchmarks and a detailed comparison).
 
 An example of defining and using a @Reader@ effect:
 
 @
 \{\-\# LANGUAGE  TypeOperators, FlexibleContexts, Rank2Types  \#\-\}
-import Control.Ev.Eff
+import Control.Mp.Eff
 
 -- A @Reader@ effect definition with one operation @ask@ of type @()@ to @a@.
 data Reader a e ans = Reader{ ask :: `Op` () a e ans }
