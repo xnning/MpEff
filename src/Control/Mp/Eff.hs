@@ -115,10 +115,12 @@ mmatch :: Marker h e a -> Marker h' e' b -> Maybe ((h e a, a, e) :~: (h' e' b, b
 mmatch (Marker i) (Marker j) | i == j  = Just (unsafeCoerce Refl)
 mmatch _ _ = Nothing
 
+{-# NOINLINE unique #-}
 unique :: IORef Integer
 unique = unsafePerformIO (newIORef 0)
 
 -- evaluate a action with a fresh marker
+{-# NOINLINE freshMarker #-}
 freshMarker :: (Marker h e a -> Eff e a) -> Eff e a
 freshMarker f
   = let m = unsafePerformIO $
